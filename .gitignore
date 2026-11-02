@@ -13,3 +13,9 @@ venv/
 *.h5
 *.pt
 node_modules/
+*.pem
+__pycache__/
+*.pyc
+.venv/
+.env
+.vscode/
