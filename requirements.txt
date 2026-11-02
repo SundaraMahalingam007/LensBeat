@@ -5,3 +5,4 @@ numpy
 scipy
 torch
 mediapipe
+simple-websocket
