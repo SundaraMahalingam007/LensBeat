@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>LensBeat-Fusion — Mobile Heart Rate</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<style>
+  :root {
+    --bg-color: #0b0f19;
+    --card-bg: rgba(26, 32, 53, 0.7);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --accent-color: #0ea5e9;
+    --accent-glow: rgba(14, 165, 233, 0.5);
+    --btn-start: #10b981;
+    --btn-stop: #ef4444;
+  }
+  
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body { 
+    font-family: 'Inter', -apple-system, sans-serif; 
+    background: var(--bg-color);
+    background-image: 
+      radial-gradient(circle at 15% 50%, rgba(14, 165, 233, 0.12), transparent 30%),
+      radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.1), transparent 30%);
+    color: var(--text-primary); 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center;
+    min-height: 100vh;
+    padding: 16px;
+  }
+
+  .container {
+    background: var(--card-bg);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 24px;
+    padding: 28px 20px;
+    width: 100%;
+    max-width: 580px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  }
+
+  h1 { 
+    font-size: 1.6rem; 
+    font-weight: 700;
+    color: var(--text-primary); 
+    margin-bottom: 4px;
+    letter-spacing: -0.02em;
+    text-align: center;
+  }
+  
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    text-align: center;
+  }
+
+  /* Camera Mode Selector */
+  .mode-selector {
+    display: flex;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: 18px;
+    width: 100%;
+    max-width: 380px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: inherit;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .mode-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+    box-shadow: 0 2px 10px rgba(14, 165, 233, 0.4);
+  }
+
+  .bpm-container {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin: 10px 0 25px;
+    width: 190px;
+    height: 190px;
+    border-radius: 50%;
+    background: radial-gradient(circle at center, rgba(14, 165, 233, 0.12) 0%, transparent 70%);
+  }
+
+  .bpm-container::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+    border: 2px dashed rgba(14, 165, 233, 0.35);
+    animation: spin 20s linear infinite;
+  }
+
+  @keyframes spin {
+    100% { transform: rotate(360deg); }
+  }
+
+  .bpm { 
+    font-size: 4.8rem; 
+    font-weight: 700; 
+    color: #fff; 
+    text-shadow: 0 0 25px var(--accent-glow);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1;
+    transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  .bpm span { 
+    font-size: 1.1rem; 
+    font-weight: 500;
+    color: var(--accent-color); 
+    margin-top: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    text-shadow: none;
+  }
+
+  .quality-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-bottom: 18px;
+    width: 100%;
+  }
+
+  .quality-badge {
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    border: 1px solid rgba(255,255,255,0.08);
+    transition: all 0.2s ease;
+  }
+
+  .quality-badge.good { color: #10b981; border-color: rgba(16, 185, 129, 0.3); background: rgba(16, 185, 129, 0.12); }
+  .quality-badge.fair { color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); background: rgba(245, 158, 11, 0.12); }
+  .quality-badge.low  { color: #ef4444; border-color: rgba(239, 68, 68, 0.3); background: rgba(239, 68, 68, 0.12); }
+
+  /* Video Viewport */
+  .video-container {
+    position: relative;
+    width: 100%;
+    max-width: 280px;
+    height: 210px;
+    margin-bottom: 20px;
+    border-radius: 18px;
+    overflow: hidden;
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.1);
+    display: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  
+  #clientVideo {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* Mirror for selfie view */
+  }
+
+  #videoFeed {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  /* Oval Face Target Guide */
+  .face-guide {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 120px;
+    height: 160px;
+    border: 2px dashed rgba(14, 165, 233, 0.6);
+    border-radius: 50% 50% 45% 45%;
+    pointer-events: none;
+    box-shadow: 0 0 15px rgba(14, 165, 233, 0.2);
+  }
+
+  .controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 16px;
+    width: 100%;
+    max-width: 320px;
+  }
+
+  button.action-btn { 
+    flex: 1;
+    padding: 13px 20px; 
+    font-size: 0.95rem; 
+    font-weight: 600;
+    font-family: inherit;
+    border: none; 
+    border-radius: 12px;
+    cursor: pointer; 
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  #startBtn { 
+    background: var(--btn-start); 
+    color: #fff; 
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.35);
+  }
+
+  #startBtn:hover {
+    box-shadow: 0 6px 20px rgba(16, 185, 129, 0.45);
+  }
+
+  #stopBtn { 
+    background: rgba(239, 68, 68, 0.12); 
+    color: var(--btn-stop); 
+    border: 1px solid rgba(239, 68, 68, 0.3);
+  }
+
+  button:active {
+    transform: translateY(1px) !important;
+  }
+
+  #status { 
+    padding: 6px 14px;
+    border-radius: 20px;
+    background: rgba(255,255,255,0.05);
+    color: var(--text-secondary); 
+    font-size: 0.8rem; 
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-align: center;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+    flex-shrink: 0;
+  }
+
+  .status-dot.active {
+    background: var(--btn-start);
+    box-shadow: 0 0 8px var(--btn-start);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0% { transform: scale(0.95); opacity: 0.8; }
+    50% { transform: scale(1.15); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.8; }
+  }
+
+  .canvas-container {
+    width: 100%;
+    margin-top: 24px;
+    position: relative;
+  }
+
+  canvas { 
+    width: 100%;
+    height: 120px;
+    background: rgba(0, 0, 0, 0.3); 
+    border-radius: 14px; 
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  
+  .canvas-label {
+    position: absolute;
+    top: 10px;
+    left: 14px;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Warning banner for camera permissions */
+  #httpsWarning {
+    display: none;
+    background: rgba(245, 158, 11, 0.15);
+    border: 1px solid rgba(245, 158, 11, 0.4);
+    color: #fcd34d;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    margin-bottom: 14px;
+    text-align: center;
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+  
+  <div class="container">
+    <h1>LensBeat Mobile</h1>
+    <div class="subtitle">Contactless rPPG Heart Rate Monitor</div>
+
+    <div id="httpsWarning">
+      ⚠️ Mobile browsers require <strong>HTTPS</strong> to access your camera. Open using <code>https://</code> or a secure tunnel.
+    </div>
+
+    <!-- Mode Selector -->
+    <div class="mode-selector">
+      <button class="mode-btn active" id="modeSelfie">📱 Selfie Camera</button>
+      <button class="mode-btn" id="modeServer">💻 PC Webcam</button>
+    </div>
+    
+    <div class="bpm-container">
+      <div class="bpm" id="bpmDisplay">--<span>BPM</span></div>
+    </div>
+
+    <div class="quality-row">
+      <div class="quality-badge" id="qualityBadge">Quality: --</div>
+      <div class="quality-badge" id="motionBadge">Motion: --</div>
+      <div class="quality-badge" id="confidenceBadge">Confidence: --</div>
+    </div>
+
+    <div class="video-container" id="videoContainer">
+      <video id="clientVideo" autoplay playsinline muted></video>
+      <img id="videoFeed" src="" alt="Camera Feed" style="display:none;">
+      <div class="face-guide"></div>
+    </div>
+
+    <div class="controls">
+      <button class="action-btn" id="startBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Start
+      </button>
+      <button class="action-btn" id="stopBtn">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+        Stop
+      </button>
+    </div>
+    
+    <div id="status">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Ready</span>
+    </div>
+    
+    <div class="canvas-container">
+      <div class="canvas-label">rPPG Waveform</div>
+      <canvas id="waveCanvas"></canvas>
+    </div>
+  </div>
+
+<script>
+  const socket = io();
+  const bpmDisplay = document.getElementById("bpmDisplay");
+  const statusText = document.getElementById("statusText");
+  const statusDot = document.getElementById("statusDot");
+  const canvas = document.getElementById("waveCanvas");
+  const ctx = canvas.getContext("2d");
+  const videoContainer = document.getElementById("videoContainer");
+  const clientVideo = document.getElementById("clientVideo");
+  const videoFeed = document.getElementById("videoFeed");
+  const qualityBadge = document.getElementById("qualityBadge");
+  const motionBadge = document.getElementById("motionBadge");
+  const confidenceBadge = document.getElementById("confidenceBadge");
+  const httpsWarning = document.getElementById("httpsWarning");
+
+  const modeSelfie = document.getElementById("modeSelfie");
+  const modeServer = document.getElementById("modeServer");
+
+  let currentMode = "selfie"; // "selfie" | "server"
+  let clientStream = null;
+  let clientCaptureInterval = null;
+
+  // Off-screen canvas for frame capture
+  const captureCanvas = document.createElement("canvas");
+  captureCanvas.width = 320;
+  captureCanvas.height = 240;
+  const captureCtx = captureCanvas.getContext("2d");
+
+  // Mode Selection
+  modeSelfie.onclick = () => {
+    if (clientStream) stopMonitoring();
+    currentMode = "selfie";
+    modeSelfie.classList.add("active");
+    modeServer.classList.remove("active");
+    statusText.textContent = "Selfie mode selected";
+  };
+
+  modeServer.onclick = () => {
+    if (clientStream) stopMonitoring();
+    currentMode = "server";
+    modeServer.classList.add("active");
+    modeSelfie.classList.remove("active");
+    statusText.textContent = "PC Webcam mode selected";
+  };
+
+  // Check HTTPS
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    httpsWarning.style.display = 'block';
+  }
+
+  function badgeClassFor(label) {
+    if (label === "GOOD") return "good";
+    if (label === "FAIR") return "fair";
+    return "low";
+  }
+
+  function motionBadgeClassFor(level) {
+    if (level === "LOW") return "good";
+    if (level === "MODERATE") return "fair";
+    return "low";
+  }
+  
+  function resizeCanvas() {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * window.devicePixelRatio;
+    canvas.height = rect.height * window.devicePixelRatio;
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  }
+  
+  window.addEventListener('resize', resizeCanvas);
+  resizeCanvas();
+
+  // START
+  document.getElementById("startBtn").onclick = async () => {
+    if (currentMode === "selfie") {
+      await startClientCamera();
+    } else {
+      socket.emit("start_monitoring");
+      statusText.textContent = "Connecting to PC webcam...";
+      clientVideo.style.display = "none";
+      videoFeed.style.display = "block";
+    }
+  };
+  
+  // STOP
+  document.getElementById("stopBtn").onclick = () => {
+    stopMonitoring();
+  };
+
+  function stopMonitoring() {
+    if (currentMode === "selfie") {
+      if (clientCaptureInterval) {
+        clearInterval(clientCaptureInterval);
+        clientCaptureInterval = null;
+      }
+      if (clientStream) {
+        clientStream.getTracks().forEach(track => track.stop());
+        clientStream = null;
+      }
+      clientVideo.srcObject = null;
+    } else {
+      socket.emit("stop_monitoring");
+    }
+
+    bpmDisplay.innerHTML = "--<span>BPM</span>";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    videoContainer.style.display = "none";
+    videoFeed.src = "";
+    statusText.textContent = "Stopped";
+    statusDot.classList.remove("active");
+  }
+
+  // Client-side (Mobile Selfie) Camera
+  async function startClientCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      statusText.textContent = "Camera blocked: HTTPS required";
+      httpsWarning.style.display = 'block';
+      alert("Mobile browsers require HTTPS to allow camera access. Please open via https:// link.");
+      return;
+    }
+
+    try {
+      statusText.textContent = "Requesting mobile camera...";
+      clientStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 480 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 30 }
+        },
+        audio: false
+      });
+
+      clientVideo.srcObject = clientStream;
+      clientVideo.style.display = "block";
+      videoFeed.style.display = "none";
+      videoContainer.style.display = "block";
+      await clientVideo.play();
+
+      statusText.textContent = "Selfie camera active — stay still";
+      statusDot.classList.add("active");
+
+      // Capture frames and stream over WebSocket at ~30 FPS
+      let inFlight = false;
+      clientCaptureInterval = setInterval(() => {
+        if (!inFlight && clientVideo.readyState >= 2) {
+          inFlight = true;
+          captureCtx.drawImage(clientVideo, 0, 0, captureCanvas.width, captureCanvas.height);
+          const dataUrl = captureCanvas.toDataURL("image/jpeg", 0.75);
+          socket.emit("client_frame", { image: dataUrl });
+          inFlight = false;
+        }
+      }, 1000 / 30);
+
+    } catch (err) {
+      statusText.textContent = "Camera error: " + err.message;
+      statusDot.classList.remove("active");
+      console.error(err);
+      alert("Could not access camera: " + err.message);
+    }
+  }
+
+  // Server-side video frame reception (PC webcam mode)
+  socket.on("video_frame", (data) => {
+    if (currentMode === "server") {
+      videoContainer.style.display = "block";
+      videoFeed.src = data.image;
+    }
+  });
+
+  socket.on("status", (data) => { 
+    statusText.textContent = data.message; 
+    if (data.message.includes("started")) {
+      statusDot.classList.add("active");
+    } else {
+      statusDot.classList.remove("active");
+    }
+  });
+  
+  socket.on("error", (data) => { 
+    statusText.textContent = "Error: " + data.message; 
+    statusDot.classList.remove("active");
+  });
+
+  // BPM & Waveform updates
+  let currentBpm = 0;
+  let targetBpm = 0;
+  
+  function updateBpmAnimation() {
+    if (Math.abs(currentBpm - targetBpm) > 0.1) {
+      currentBpm += (targetBpm - currentBpm) * 0.15;
+      bpmDisplay.innerHTML = currentBpm.toFixed(1) + "<span>BPM</span>";
+      const scale = 1 + (Math.sin(Date.now() / (60000 / (targetBpm || 75)) * Math.PI) * 0.04);
+      bpmDisplay.style.transform = `scale(${scale})`;
+      requestAnimationFrame(updateBpmAnimation);
+    } else {
+      bpmDisplay.innerHTML = targetBpm.toFixed(1) + "<span>BPM</span>";
+      bpmDisplay.style.transform = 'scale(1)';
+    }
+  }
+
+  socket.on("bpm_update", (data) => {
+    targetBpm = data.bpm;
+    requestAnimationFrame(updateBpmAnimation);
+    drawWaveform(data.waveform);
+
+    qualityBadge.textContent = "Quality: " + data.signal_quality;
+    qualityBadge.className = "quality-badge " + badgeClassFor(data.signal_quality);
+
+    motionBadge.textContent = "Motion: " + data.motion_level;
+    motionBadge.className = "quality-badge " + motionBadgeClassFor(data.motion_level);
+
+    confidenceBadge.textContent = "Confidence: " + data.confidence + "%";
+    confidenceBadge.className = "quality-badge " + badgeClassFor(data.signal_quality);
+
+    if (!data.face_detected) {
+      statusText.textContent = "Align face inside the oval guide";
+    } else {
+      statusText.textContent = "Monitoring heart rate...";
+    }
+  });
+
+  function drawWaveform(waveform) {
+    if (!waveform || waveform.length === 0) return;
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    
+    ctx.clearRect(0, 0, w, h);
+    
+    // Grid line
+    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, h/2);
+    ctx.lineTo(w, h/2);
+    ctx.stroke();
+
+    // Waveform line
+    ctx.strokeStyle = "#0ea5e9";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = "rgba(14, 165, 233, 0.6)";
+    
+    ctx.beginPath();
+    const min = Math.min(...waveform);
+    const max = Math.max(...waveform);
+    const range = (max - min) || 1;
+    
+    const py = 16; 
+    const usableH = h - (py * 2);
+
+    waveform.forEach((v, i) => {
+      const x = (i / (waveform.length - 1)) * w;
+      const normalizedY = ((v - min) / range);
+      const y = h - py - (normalizedY * usableH);
+      
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+</script>
+</body>
+</html>
